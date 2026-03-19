@@ -68,7 +68,7 @@ export function AITutor() {
         height: 'calc(100vh - 100px)',
         alignItems: 'center',
         justifyContent: 'center',
-      }} className="container">
+      }} className="page-container">
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '48px', marginBottom: '16px' }}>🤖</div>
           <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '8px' }}>
@@ -98,7 +98,7 @@ export function AITutor() {
         flex: 1,
         overflowY: 'auto',
         padding: '24px 16px',
-      }} className="container">
+      }} className="page-container">
         {messages.length === 0 ? (
           <div style={{ textAlign: 'center', marginTop: '40px' }}>
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>🤖</div>
@@ -185,7 +185,7 @@ export function AITutor() {
         padding: '16px',
         background: 'rgba(0, 0, 0, 0.5)',
       }}>
-        <div className="container">
+        <div className="page-container">
           <div style={{ display: 'flex', gap: '8px' }}>
             <input
               type="text"

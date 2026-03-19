@@ -5,11 +5,8 @@ import { useApp, renderMd } from '@/lib/store'
 import { FLASHCARDS, MULTIPLE_CHOICE, TRUE_FALSE, FIB, ORD, TOPICS, TOPIC_COLORS, CONCEPTS } from '@/data/questions'
 import { TopicTag } from './shared'
 
-// The AI generates questions in these formats
-const QUESTION_TYPES = ['multiple_choice', 'true_false', 'fill_blank', 'explain', 'ordering']
-
 export function AIStudyMode() {
-  const { apiKey, askAI, recordAction, getWeaknessProfile, cardStats } = useApp()
+  const { apiKey, askAI, recordAction, recordSession, getWeaknessProfile, cardStats } = useApp()
 
   // Session config
   const [sessionLength, setSessionLength] = useState(null) // minutes
@@ -20,6 +17,8 @@ export function AIStudyMode() {
   const [phase, setPhase] = useState('teach') // 'teach' | 'question' | 'feedback' | 'summary'
   const [currentTopic, setCurrentTopic] = useState('')
   const [teachContent, setTeachContent] = useState('')
+  const [teachPages, setTeachPages] = useState([])
+  const [currentTeachPage, setCurrentTeachPage] = useState(0)
   const [currentQuestion, setCurrentQuestion] = useState(null)
   const [userAnswer, setUserAnswer] = useState('')
   const [selectedOption, setSelectedOption] = useState(null)
@@ -32,15 +31,19 @@ export function AIStudyMode() {
   const [timeLeft, setTimeLeft] = useState(0)
   const [sessionDone, setSessionDone] = useState(false)
   const [aiSummary, setAiSummary] = useState(null)
+  const [lastWrongConcept, setLastWrongConcept] = useState(null)
+  const [topicBreakdown, setTopicBreakdown] = useState({})
 
   const timerRef = useRef(null)
   const bottomRef = useRef(null)
-
   const [timerActive, setTimerActive] = useState(false)
 
-  // Timer — only runs when timerActive is true (after first lesson loads)
+  // Timer pauses when loading
   useEffect(() => {
-    if (!timerActive || sessionDone) return
+    if (!timerActive || sessionDone || loading) {
+      if (timerRef.current) clearInterval(timerRef.current)
+      return
+    }
     timerRef.current = setInterval(() => {
       setTimeLeft(t => {
         if (t <= 1) {
@@ -52,7 +55,7 @@ export function AIStudyMode() {
       })
     }, 1000)
     return () => clearInterval(timerRef.current)
-  }, [timerActive, sessionDone])
+  }, [timerActive, sessionDone, loading])
 
   // Auto-scroll
   useEffect(() => {
@@ -74,9 +77,10 @@ export function AIStudyMode() {
     setSessionLog([])
     setSessionDone(false)
     setAiSummary(null)
-    setTimerActive(false) // Don't start timer yet
+    setTopicBreakdown({})
+    setLastWrongConcept(null)
+    setTimerActive(false)
 
-    // Get weakness profile to decide what to teach first
     const profile = getWeaknessProfile()
     const weakestTopic = focusTopic !== 'All' ? focusTopic :
       (profile.topicScores ? Object.entries(profile.topicScores).sort((a, b) => a[1] - b[1])[0]?.[0] : 'Tissues') || 'Tissues'
@@ -87,60 +91,65 @@ export function AIStudyMode() {
       await generateTeachPhase(weakestTopic, profile)
     } catch (e) {
       console.error('startSession failed:', e)
-      // Force show static content so it doesn't hang
       const concept = CONCEPTS.find(c => c.id === weakestTopic.toLowerCase()) || CONCEPTS[0]
-      setTeachContent(concept?.body || concept || 'Review this topic in the Notes section.')
+      setTeachContent(concept?.body || 'Review this topic.')
       setPhase('teach')
       setLoading(false)
     }
-    // NOW start the timer after lesson is loaded
     setTimerActive(true)
   }
-
-  const [aiError, setAiError] = useState(null)
 
   const generateTeachPhase = async (topic, profile) => {
     setPhase('teach')
     setLoading(true)
-    setAiError(null)
+    setCurrentTeachPage(0)
 
-    // Always prepare static fallback
     const concept = CONCEPTS.find(c =>
       c.title?.toLowerCase().includes(topic.toLowerCase()) ||
       c.id?.toLowerCase() === topic.toLowerCase()
     ) || CONCEPTS[0]
-    const fallbackContent = concept?.body || `Let's review ${topic}. Check the Notes section for full content.`
+    const fallbackContent = concept?.body || `Let's review ${topic}.`
 
     if (apiKey && askAI) {
       try {
         const weakAreas = profile?.weakConcepts?.join(', ') || 'unknown'
+        const prompt = `SNC2D quick review: ${topic}. Student weak at: ${weakAreas}. Give exactly 4 bullet points, 1 sentence each. Format: **Term** — explanation. End with 1 memory trick. No intro/outro.`
 
-        // Add timeout so it doesn't hang forever
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Request timed out (15s)')), 15000))
-        const aiPromise = askAI(
-          `You are a biology tutor giving a QUICK review for a Grade 10 SNC2D test. Topic: "${topic}". ` +
-          `Student's weak areas: ${weakAreas}. ` +
-          `Reference: ${concept?.body?.substring(0, 400) || topic}. ` +
-          `Give a BITE-SIZED review (MAX 8 bullet points). Format EXACTLY like this:\n` +
-          `**Key Point 1** — short explanation\n` +
-          `**Key Point 2** — short explanation\n` +
-          `Then add ONE memory trick at the end.\n` +
-          `Keep each bullet to 1 sentence MAX. Be direct, no fluff. Focus on what they're weak at.`
-        )
-
-        const response = await Promise.race([aiPromise, timeoutPromise])
-        setTeachContent(response)
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000))
+        const response = await Promise.race([askAI(prompt, 200), timeoutPromise])
+        
+        // Split into pages (2-3 bullet points per page)
+        const lines = response.split('\n').filter(l => l.trim())
+        const pages = []
+        for (let i = 0; i < lines.length; i += 2) {
+          pages.push(lines.slice(i, i + 2).join('\n'))
+        }
+        setTeachPages(pages.length > 0 ? pages : [response])
+        setTeachContent(pages[0] || response)
       } catch (e) {
-        const errMsg = e.message || 'Unknown error'
-        console.error('AI teach failed:', errMsg)
-        setAiError(`AI failed: ${errMsg}. Using saved notes instead.`)
+        console.error('AI teach failed:', e)
         setTeachContent(fallbackContent)
+        setTeachPages([fallbackContent])
       }
     } else {
-      if (!apiKey) setAiError('No API key set. Using saved notes. Add your key in Settings for AI-powered lessons.')
       setTeachContent(fallbackContent)
+      setTeachPages([fallbackContent])
     }
     setLoading(false)
+  }
+
+  const nextTeachPage = () => {
+    if (currentTeachPage < teachPages.length - 1) {
+      setCurrentTeachPage(currentTeachPage + 1)
+      setTeachContent(teachPages[currentTeachPage + 1])
+    } else {
+      // All lesson pages shown, move to questions
+      generateQuestion()
+    }
+  }
+
+  const skipLesson = () => {
+    generateQuestion()
   }
 
   const generateQuestion = async () => {
@@ -155,35 +164,19 @@ export function AIStudyMode() {
 
     if (apiKey) {
       try {
-        // Ask AI to generate a question based on weaknesses
         const profile = getWeaknessProfile()
-        const weakAreas = profile?.weakConcepts?.slice(0, 3)?.join(', ') || currentTopic
-
-        // Alternate question types
-        const types = ['multiple_choice', 'true_false', 'fill_blank', 'explain']
-        const qType = types[(num - 1) % types.length]
-
-        let prompt = ''
-        if (qType === 'multiple_choice') {
-          prompt = `Generate a multiple choice question about ${currentTopic} for a Grade 10 biology test (SNC2D). Focus on: ${weakAreas}. ` +
-            `Return ONLY valid JSON: {"type":"mc","question":"...","options":["A)...","B)...","C)...","D)..."],"correct":0,"explanation":"..."} ` +
-            `where correct is the 0-based index of the right answer. Make it challenging but fair.`
-        } else if (qType === 'true_false') {
-          prompt = `Generate a true/false question about ${currentTopic} for SNC2D biology. Focus on: ${weakAreas}. ` +
-            `Return ONLY valid JSON: {"type":"tf","statement":"...","answer":true,"explanation":"..."}`
-        } else if (qType === 'fill_blank') {
-          prompt = `Generate a fill-in-the-blank question about ${currentTopic} for SNC2D biology. Focus on: ${weakAreas}. ` +
-            `Return ONLY valid JSON: {"type":"fill","question":"The ___ is responsible for...","answer":"word","explanation":"..."}`
-        } else {
-          prompt = `Generate a short-answer question about ${currentTopic} for SNC2D biology. Focus on: ${weakAreas}. ` +
-            `Return ONLY valid JSON: {"type":"explain","question":"Explain how/why...","keyPoints":["point1","point2","point3"],"modelAnswer":"..."}`
+        let targetConcept = currentTopic
+        
+        // If last answer was wrong, drill same concept
+        if (lastWrongConcept) {
+          targetConcept = lastWrongConcept
         }
 
-        // Add timeout
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
-        const response = await Promise.race([askAI(prompt), timeoutPromise])
+        const prompt = `Generate a multiple choice question about ${targetConcept} for Grade 10 SNC2D biology. Focus on ${profile.weakConcepts.slice(0, 2).join(', ') || 'key concepts'}. Return ONLY valid JSON, no other text. No markdown. {"type":"mc","question":"...","options":["A)...","B)...","C)...","D)..."],"correct":0,"explanation":"..."}`
 
-        // Parse the JSON from the response
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
+        const response = await Promise.race([askAI(prompt, 200), timeoutPromise])
+
         const jsonMatch = response.match(/\{[\s\S]*\}/)
         if (jsonMatch) {
           const q = JSON.parse(jsonMatch[0])
@@ -192,7 +185,7 @@ export function AIStudyMode() {
           fallbackQuestion()
         }
       } catch (e) {
-        console.error('AI question generation failed:', e.message)
+        console.error('AI question generation failed:', e)
         fallbackQuestion()
       }
     } else {
@@ -202,521 +195,391 @@ export function AIStudyMode() {
   }
 
   const fallbackQuestion = () => {
-    // Use existing question bank as fallback
-    const topicMC = MULTIPLE_CHOICE.filter(q => q.t === currentTopic || currentTopic === 'All')
-    const topicTF = TRUE_FALSE.filter(q => q.t === currentTopic || currentTopic === 'All')
-    const allQ = [...topicMC, ...topicTF]
-
-    if (allQ.length === 0) {
-      setCurrentQuestion({
-        type: 'mc',
-        question: 'What are the 4 primary tissue types?',
-        options: ['Epithelial, Muscle, Connective, Nervous', 'Bone, Blood, Skin, Fat', 'Cell, Tissue, Organ, System', 'None of the above'],
-        correct: 0,
-        explanation: 'The 4 tissue types are Epithelial, Muscle, Connective, and Nervous.'
-      })
+    const allQuestions = MULTIPLE_CHOICE.filter(q => q.t === currentTopic)
+    if (allQuestions.length === 0) {
+      setPhase('summary')
       return
     }
-
-    const picked = allQ[Math.floor(Math.random() * allQ.length)]
-
-    if (picked.o) {
-      // MC question
-      setCurrentQuestion({
-        type: 'mc',
-        question: picked.q,
-        options: picked.o,
-        correct: picked.c,
-        explanation: `The correct answer is: ${picked.o[picked.c]}`
-      })
-    } else {
-      // TF question
-      setCurrentQuestion({
-        type: 'tf',
-        statement: picked.s,
-        answer: picked.a,
-        explanation: picked.e || (picked.a ? 'This statement is true.' : 'This statement is false.')
-      })
-    }
+    const q = allQuestions[Math.floor(Math.random() * allQuestions.length)]
+    setCurrentQuestion({
+      type: 'mc',
+      question: q.q,
+      options: q.o,
+      correct: q.c,
+      explanation: `The correct answer is ${q.o[q.c]}`
+    })
   }
 
-  const submitAnswer = async () => {
-    if (!currentQuestion) return
-    setPhase('feedback')
-
-    let isCorrect = false
-    const q = currentQuestion
-
-    if (q.type === 'mc') {
-      isCorrect = selectedOption === q.correct
-    } else if (q.type === 'tf') {
-      isCorrect = selectedOption === (q.answer ? 0 : 1)
-    } else if (q.type === 'fill') {
-      isCorrect = userAnswer.trim().toLowerCase() === q.answer.toLowerCase()
-    } else if (q.type === 'explain') {
-      // For explain questions, AI evaluates the answer
-      if (apiKey && userAnswer.trim()) {
-        setLoading(true)
-        try {
-          const evalResponse = await askAI(
-            `Student was asked: "${q.question}". They answered: "${userAnswer}". ` +
-            `The key points they should mention: ${q.keyPoints?.join(', ')}. ` +
-            `Model answer: ${q.modelAnswer}. ` +
-            `Rate their answer: was it correct? Give brief feedback. ` +
-            `Return JSON: {"correct":true/false,"feedback":"..."}`
-          )
-          const match = evalResponse.match(/\{[\s\S]*\}/)
-          if (match) {
-            const result = JSON.parse(match[0])
-            isCorrect = result.correct
-            setFeedback({
-              correct: isCorrect,
-              message: result.feedback,
-              modelAnswer: q.modelAnswer
-            })
-            setLoading(false)
-            recordAction('ai_study', currentTopic, questionNumber, isCorrect)
-            setSessionLog(prev => [...prev, { topic: currentTopic, type: q.type, correct: isCorrect }])
-            if (isCorrect) setCorrect(c => c + 1)
-            else setWrong(w => w + 1)
-            return
-          }
-        } catch (e) {
-          console.error(e)
-        }
-        setLoading(false)
-      }
-      // Default: mark as attempted
-      isCorrect = userAnswer.trim().length > 20 // generous - if they wrote something substantial
-    }
-
-    recordAction('ai_study', currentTopic, questionNumber, isCorrect)
-    setSessionLog(prev => [...prev, { topic: currentTopic, type: q.type, correct: isCorrect }])
-
+  const handleAnswer = async (selectedIdx) => {
+    setSelectedOption(selectedIdx)
+    const isCorrect = selectedIdx === currentQuestion.correct
+    
     if (isCorrect) {
       setCorrect(c => c + 1)
-      setFeedback({
-        correct: true,
-        message: '✅ Correct! ' + (q.explanation || ''),
-        modelAnswer: null
-      })
+      setLastWrongConcept(null)
     } else {
       setWrong(w => w + 1)
-      let msg = '❌ Not quite. '
-      if (q.type === 'mc') msg += `The correct answer is: ${q.options[q.correct]}`
-      else if (q.type === 'tf') msg += `The statement is ${q.answer ? 'TRUE' : 'FALSE'}.`
-      else if (q.type === 'fill') msg += `The correct answer is: ${q.answer}`
-
-      setFeedback({
-        correct: false,
-        message: msg + (q.explanation ? '\n\n' + q.explanation : ''),
-        modelAnswer: q.type === 'explain' ? q.modelAnswer : null
-      })
+      // Track this concept for drilling
+      setLastWrongConcept(currentTopic)
     }
-  }
 
-  const nextAction = async () => {
-    // Decide: teach more or ask another question
-    // After every 3 questions, switch topic or re-teach
-    const total = correct + wrong
+    recordAction('ai-study', currentTopic, `q${questionNumber}`, isCorrect)
+    
+    // Update topic breakdown
+    setTopicBreakdown(prev => ({
+      ...prev,
+      [currentTopic]: (prev[currentTopic] || [0, 0]).map((v, i) => i === 0 ? v + (isCorrect ? 1 : 0) : v + 1)
+    }))
 
-    if (total > 0 && total % 3 === 0) {
-      // Switch to a new topic or re-teach current if struggling
-      const accuracy = correct / total
-      if (accuracy < 0.5) {
-        // Re-teach current topic
-        const profile = getWeaknessProfile()
-        await generateTeachPhase(currentTopic, profile)
-      } else {
-        // Move to next topic
-        const topicList = focusTopic !== 'All' ? [focusTopic] : TOPICS
-        const currentIdx = topicList.indexOf(currentTopic)
-        const nextTopic = topicList[(currentIdx + 1) % topicList.length]
-        setCurrentTopic(nextTopic)
-        const profile = getWeaknessProfile()
-        await generateTeachPhase(nextTopic, profile)
-      }
-    } else {
-      await generateQuestion()
-    }
-  }
+    setFeedback({
+      correct: isCorrect,
+      explanation: currentQuestion.explanation
+    })
 
-  const endSession = async () => {
-    setSessionDone(true)
-    clearInterval(timerRef.current)
-
-    if (apiKey && sessionLog.length > 0) {
-      setLoading(true)
+    // If API available, provide hint for wrong answers
+    if (!isCorrect && apiKey) {
       try {
-        const topicBreakdown = {}
-        sessionLog.forEach(entry => {
-          if (!topicBreakdown[entry.topic]) topicBreakdown[entry.topic] = { correct: 0, wrong: 0 }
-          if (entry.correct) topicBreakdown[entry.topic].correct++
-          else topicBreakdown[entry.topic].wrong++
-        })
-
-        const breakdown = Object.entries(topicBreakdown)
-          .map(([t, s]) => `${t}: ${s.correct}/${s.correct + s.wrong} correct`)
-          .join(', ')
-
-        const response = await askAI(
-          `Student just finished an AI study session. Results: ${correct} correct, ${wrong} wrong. ` +
-          `Topic breakdown: ${breakdown}. ` +
-          `Give a brief performance summary (2-3 sentences), then list 3 specific things to study next. Be encouraging.`
-        )
-        setAiSummary(response)
+        const hint = await askAI(`Question: "${currentQuestion.question}". Correct answer: "${currentQuestion.options[currentQuestion.correct]}". Give a 1-sentence hint that doesn't reveal the answer.`, 100)
+        setFeedback(prev => ({ ...prev, hint }))
       } catch (e) {
-        console.error(e)
+        // Silent fail for hint
       }
-      setLoading(false)
     }
   }
 
-  // ═══════ RENDER: Session picker ═══════
+  const nextQuestion = () => {
+    if (questionNumber >= 12 || timeLeft <= 0) {
+      finishSession()
+    } else {
+      generateQuestion()
+    }
+  }
+
+  const finishSession = async () => {
+    setSessionDone(true)
+    setPhase('summary')
+    
+    recordSession('AI Study', currentTopic, correct, correct + wrong, Math.round((sessionLength * 60 - timeLeft) / 60))
+
+    if (apiKey) {
+      try {
+        const topicsStr = Object.entries(topicBreakdown).map(([t, [c, total]]) => `${t}: ${c}/${total}`).join(', ')
+        const prompt = `Student completed AI study session. Results: ${correct}/${correct + wrong} correct. Topics: ${topicsStr}. Give brief review summary (2-3 sentences) with 2 specific concepts to review. Format as JSON: {"summary":"...","reviewConcepts":["concept1","concept2"]}`
+        
+        const response = await Promise.race([
+          askAI(prompt, 150),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
+        ])
+        const jsonMatch = response.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          setAiSummary(JSON.parse(jsonMatch[0]))
+        }
+      } catch (e) {
+        console.error('Summary generation failed:', e)
+      }
+    }
+  }
+
+  const getHintButton = async () => {
+    if (!apiKey || !currentQuestion) return
+    setLoading(true)
+    try {
+      const hint = await askAI(`Question: "${currentQuestion.question}". Give a 1-sentence hint without revealing the answer.`, 100)
+      setFeedback(prev => ({ ...prev, hint }))
+    } catch (e) {
+      console.error('Hint failed:', e)
+    }
+    setLoading(false)
+  }
+
   if (!started) {
-    const profile = getWeaknessProfile()
-    const lengths = [
-      { min: 5, label: '5 min', desc: 'Quick review' },
-      { min: 10, label: '10 min', desc: 'Short session' },
-      { min: 20, label: '20 min', desc: 'Standard' },
-      { min: 30, label: '30 min', desc: 'Deep dive' },
-      { min: 45, label: '45 min', desc: 'Extended' },
-      { min: 60, label: '1 hour', desc: 'Full session' },
-    ]
-
     return (
-      <div className="animate-fade-up">
-        <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>🧠 AI Study Mode</h1>
-        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, marginBottom: 24 }}>
-          AI teaches you concepts, then tests your understanding with adaptive questions
-        </p>
-
-        {/* Focus Topic */}
-        <div className="glass" style={{ marginBottom: 16 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Focus Topic</h3>
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 12 }}>
-            Choose a topic to focus on, or let AI decide based on your weaknesses
+      <div className="page-container" style={{ paddingTop: '24px' }}>
+        <h1 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '16px' }}>🧠 AI Study Mode</h1>
+        
+        <div className="card-lg" style={{ marginBottom: '24px' }}>
+          <p style={{ color: '#a1a1a6', marginBottom: '16px' }}>
+            AI-powered personalized study sessions with adaptive lessons and bite-sized questions.
           </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <button
-              onClick={() => setFocusTopic('All')}
-              className={`btn ${focusTopic === 'All' ? 'btn-green' : 'btn-ghost'}`}
-              style={{ fontSize: 13, padding: '8px 16px' }}
-            >
-              🤖 AI Picks
-            </button>
+
+          <label style={{ display: 'block', fontSize: '13px', color: '#a1a1a6', marginBottom: '8px' }}>
+            SESSION LENGTH
+          </label>
+          <select
+            value={sessionLength || ''}
+            onChange={(e) => setSessionLength(parseInt(e.target.value))}
+            className="input"
+            style={{ marginBottom: '16px' }}
+          >
+            <option value="">Select duration...</option>
+            <option value="10">10 minutes</option>
+            <option value="20">20 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="45">45 minutes</option>
+            <option value="60">60 minutes</option>
+          </select>
+
+          <label style={{ display: 'block', fontSize: '13px', color: '#a1a1a6', marginBottom: '8px' }}>
+            FOCUS TOPIC
+          </label>
+          <select
+            value={focusTopic}
+            onChange={(e) => setFocusTopic(e.target.value)}
+            className="input"
+            style={{ marginBottom: '20px' }}
+          >
+            <option>All</option>
             {TOPICS.map(t => (
-              <button
-                key={t}
-                onClick={() => setFocusTopic(t)}
-                className={`btn ${focusTopic === t ? 'btn-green' : 'btn-ghost'}`}
-                style={{ fontSize: 13, padding: '8px 16px' }}
-              >
-                {t}
-              </button>
+              <option key={t}>{t}</option>
             ))}
-          </div>
-          {profile.topicScores && focusTopic === 'All' && (
-            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 8 }}>
-              AI will focus on your weakest topic: <span style={{ color: '#ff453a' }}>
-                {Object.entries(profile.topicScores).sort((a, b) => a[1] - b[1])[0]?.[0] || 'Tissues'}
-              </span>
-            </p>
-          )}
+          </select>
+
+          <button
+            onClick={startSession}
+            disabled={!sessionLength}
+            className="btn btn-primary btn-lg btn-block"
+            style={{ opacity: sessionLength ? 1 : 0.5 }}
+          >
+            {sessionLength ? 'Start Session' : 'Select a duration'}
+          </button>
         </div>
 
-        {/* Session Length */}
-        <div className="glass" style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Session Length</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-            {lengths.map(l => (
-              <button
-                key={l.min}
-                onClick={() => setSessionLength(l.min)}
-                className="glass-interactive"
-                style={{
-                  padding: '16px 12px',
-                  textAlign: 'center',
-                  borderRadius: 14,
-                  cursor: 'pointer',
-                  border: sessionLength === l.min ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.06)',
-                  background: sessionLength === l.min ? 'rgba(34,197,94,0.1)' : 'rgba(15,23,42,0.4)',
-                }}
-              >
-                <div style={{ fontSize: 18, fontWeight: 800, color: sessionLength === l.min ? '#22c55e' : '#fff' }}>
-                  {l.label}
-                </div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{l.desc}</div>
-              </button>
-            ))}
-          </div>
+        <div className="card" style={{ background: 'rgba(48, 209, 88, 0.1)' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: '700', marginBottom: '8px', color: '#30d158' }}>✨ Features</h3>
+          <ul style={{ fontSize: '12px', color: '#a1a1a6', lineHeight: '1.8' }}>
+            <li>• Bite-sized lessons with skip option</li>
+            <li>• AI-generated questions drilled on weak concepts</li>
+            <li>• Progress indicator and timer</li>
+            <li>• Session summary with topic breakdown</li>
+            <li>• Hints available for stuck questions</li>
+          </ul>
         </div>
-
-        {/* What to expect */}
-        <div className="glass" style={{ marginBottom: 24, background: 'rgba(34,197,94,0.06)' }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: '#22c55e' }}>How it works</h3>
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.7 }}>
-            <p>1. AI explains key concepts for your weakest topics</p>
-            <p>2. You get tested with MC, T/F, fill-blank, and written questions</p>
-            <p>3. AI adapts based on your answers — more practice on what you get wrong</p>
-            <p>4. After every 3 questions, AI re-teaches if you're struggling</p>
-            <p>5. Session ends with a personalized summary and study tips</p>
-          </div>
-        </div>
-
-        <button
-          onClick={startSession}
-          disabled={!sessionLength}
-          className={`btn btn-lg ${sessionLength ? 'btn-green' : 'btn-ghost'}`}
-          style={{ width: '100%', fontSize: 17, padding: '18px 0', opacity: sessionLength ? 1 : 0.5 }}
-        >
-          {sessionLength ? `Start ${sessionLength}-Minute Session` : 'Select a session length'}
-        </button>
-
-        {!apiKey && (
-          <p style={{ textAlign: 'center', fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 12 }}>
-            💡 Add your OpenAI API key in Settings for AI-generated questions and explanations
-          </p>
-        )}
       </div>
     )
   }
 
-  // ═══════ RENDER: Session done ═══════
-  if (sessionDone) {
-    const total = correct + wrong
-    const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0
-
+  if (sessionDone && phase === 'summary') {
+    const accuracy = correct + wrong > 0 ? Math.round((correct / (correct + wrong)) * 100) : 0
+    
     return (
-      <div className="animate-fade-up">
-        <div className="glass" style={{ textAlign: 'center', padding: 32, marginBottom: 20 }}>
-          <div style={{ fontSize: 56, marginBottom: 12 }}>
-            {accuracy >= 80 ? '🎉' : accuracy >= 60 ? '💪' : '📚'}
-          </div>
-          <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4 }}>Session Complete!</h2>
-          <p style={{ color: 'rgba(255,255,255,0.5)', marginBottom: 16 }}>
-            {sessionLength} minute AI study session
-          </p>
+      <div className="animate-fade-up" style={{ paddingTop: '24px' }}>
+        <h1 style={{ fontSize: '22px', fontWeight: '700', marginBottom: '24px', textAlign: 'center' }}>
+          Session Complete! 🎉
+        </h1>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
-            <div className="glass" style={{ padding: 16 }}>
-              <div style={{ fontSize: 24, fontWeight: 800, color: '#22c55e' }}>{correct}</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Correct</div>
-            </div>
-            <div className="glass" style={{ padding: 16 }}>
-              <div style={{ fontSize: 24, fontWeight: 800, color: '#ff453a' }}>{wrong}</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Wrong</div>
-            </div>
-            <div className="glass" style={{ padding: 16 }}>
-              <div style={{ fontSize: 24, fontWeight: 800, color: '#0a84ff' }}>{accuracy}%</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Accuracy</div>
-            </div>
+        <div className="card-lg" style={{ marginBottom: '24px', textAlign: 'center' }}>
+          <div style={{ fontSize: '64px', marginBottom: '12px' }}>
+            {accuracy >= 80 ? '🌟' : accuracy >= 60 ? '👏' : '💪'}
+          </div>
+          <div style={{ fontSize: '14px', color: '#a1a1a6', marginBottom: '16px' }}>
+            Your Accuracy
+          </div>
+          <div style={{ fontSize: '48px', fontWeight: '800', marginBottom: '12px', color: accuracy >= 80 ? '#30d158' : '#ff9f0a' }}>
+            {accuracy}%
+          </div>
+          <div style={{ fontSize: '13px', color: '#a1a1a6' }}>
+            {correct} correct · {wrong} incorrect
           </div>
         </div>
 
-        {loading && (
-          <div className="glass" style={{ padding: 20, textAlign: 'center', marginBottom: 16 }}>
-            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>🤖 Generating your personalized summary...</p>
-          </div>
-        )}
-
         {aiSummary && (
-          <div className="glass" style={{ marginBottom: 20, borderLeft: '3px solid #22c55e' }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: '#22c55e', marginBottom: 8 }}>🤖 AI Session Summary</h3>
-            <div style={{ fontSize: 14, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: renderMd(aiSummary) }} />
+          <div className="card" style={{ marginBottom: '24px', background: 'linear-gradient(135deg, rgba(48, 209, 88, 0.1), rgba(10, 132, 255, 0.1))' }}>
+            <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '12px', color: '#30d158' }}>
+              🤖 AI Feedback
+            </div>
+            <p style={{ fontSize: '13px', color: '#a1a1a6', lineHeight: '1.6', marginBottom: '12px' }}>
+              {aiSummary.summary}
+            </p>
+            {aiSummary.reviewConcepts && (
+              <div>
+                <div style={{ fontSize: '12px', color: '#a1a1a6', marginBottom: '8px', fontWeight: '600' }}>
+                  To review:
+                </div>
+                {aiSummary.reviewConcepts.map((concept, i) => (
+                  <div key={i} style={{ fontSize: '12px', color: '#ff9f0a', marginBottom: '4px' }}>
+                    • {concept}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        <button onClick={() => { setStarted(false); setSessionLength(null) }} className="btn btn-green" style={{ width: '100%' }}>
+        {Object.keys(topicBreakdown).length > 0 && (
+          <div className="card" style={{ marginBottom: '24px' }}>
+            <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '12px', color: '#a1a1a6' }}>
+              📊 TOPIC BREAKDOWN
+            </div>
+            {Object.entries(topicBreakdown).map(([topic, [c, total]]) => (
+              <div key={topic} style={{ marginBottom: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                  <span>{topic}</span>
+                  <span style={{ fontWeight: '700', color: c >= total * 0.8 ? '#30d158' : '#ff9f0a' }}>
+                    {c}/{total}
+                  </span>
+                </div>
+                <div style={{ height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${total > 0 ? (c / total) * 100 : 0}%`,
+                    background: c >= total * 0.8 ? '#30d158' : '#ff9f0a'
+                  }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={() => { setStarted(false); setSessionDone(false) }}
+          className="btn btn-primary btn-lg btn-block"
+        >
           New Session
         </button>
       </div>
     )
   }
 
-  // ═══════ RENDER: Active session ═══════
-  return (
-    <div className="animate-fade-up">
-      {/* Timer bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14, fontWeight: 700 }}>🧠 AI Study</span>
-          <TopicTag topic={currentTopic} />
+  if (phase === 'teach') {
+    return (
+      <div className="animate-fade-up" style={{ paddingTop: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h1 style={{ fontSize: '16px', fontWeight: '700' }}>📚 Learn: {currentTopic}</h1>
+          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
+            {currentTeachPage + 1} of {teachPages.length}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
-            ✅ {correct} · ❌ {wrong}
-          </span>
-          <span style={{
-            fontSize: 15, fontWeight: 700,
-            color: timeLeft < 60 ? '#ff453a' : timeLeft < 180 ? '#ff9f0a' : '#22c55e'
-          }}>
-            {formatTime(timeLeft)}
-          </span>
-        </div>
-      </div>
-      <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, marginBottom: 20, overflow: 'hidden' }}>
-        <div style={{
-          height: '100%', borderRadius: 2, background: '#22c55e',
-          width: `${(timeLeft / (sessionLength * 60)) * 100}%`,
-          transition: 'width 1s linear'
-        }} />
-      </div>
 
-      {/* Loading */}
-      {loading && (
-        <div className="glass" style={{ padding: 32, textAlign: 'center', marginBottom: 16 }}>
-          <div style={{ fontSize: 32, marginBottom: 8 }} className="animate-pulse">🤖</div>
-          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>
-            {phase === 'teach' ? 'Preparing your lesson...' : phase === 'feedback' ? 'Evaluating your answer...' : 'Generating a question...'}
-          </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginBottom: '16px' }}>
+          <span>{formatTime(timeLeft)}</span>
+          <span>Question 0/~12</span>
         </div>
-      )}
 
-      {/* Teach phase */}
-      {phase === 'teach' && !loading && (
-        <div>
-          {aiError && (
-            <div style={{ marginBottom: 12, padding: 12, borderRadius: 12, fontSize: 13, background: 'rgba(255,159,10,0.1)', color: '#ff9f0a', border: '1px solid rgba(255,159,10,0.2)' }}>
-              ⚠️ {aiError}
-            </div>
-          )}
-          <div className="glass" style={{ marginBottom: 16, borderLeft: '3px solid #0a84ff' }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0a84ff', marginBottom: 12 }}>
-              📖 Let's learn about {currentTopic}
-            </h3>
-            <div style={{ fontSize: 14, lineHeight: 1.8, color: 'rgba(255,255,255,0.8)' }}
+        {loading ? (
+          <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+            <p style={{ color: '#a1a1a6' }}>Loading lesson...</p>
+          </div>
+        ) : (
+          <>
+            <div className="glass" style={{ padding: '20px', marginBottom: '20px', fontSize: '13px', lineHeight: '1.7' }}
               dangerouslySetInnerHTML={{ __html: renderMd(teachContent) }} />
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={skipLesson} className="btn btn-ghost" style={{ flex: 1 }}>
+                Skip to Questions
+              </button>
+              <button onClick={nextTeachPage} className="btn btn-primary" style={{ flex: 1 }}>
+                {currentTeachPage < teachPages.length - 1 ? 'Next' : 'Start Questions'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  if (phase === 'question' && currentQuestion) {
+    return (
+      <div className="animate-fade-up" style={{ paddingTop: '24px' }} ref={bottomRef}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h2 style={{ fontSize: '13px', fontWeight: '700', color: '#a1a1a6' }}>
+            Question {questionNumber}/12
+          </h2>
+          <div style={{ fontSize: '13px', fontWeight: '700', color: timeLeft < 60 ? '#ff453a' : '#fff' }}>
+            {formatTime(timeLeft)}
           </div>
-          <button onClick={generateQuestion} className="btn btn-green" style={{ width: '100%', fontSize: 16, padding: '16px 0' }}>
-            I'm ready — test me! →
-          </button>
         </div>
-      )}
 
-      {/* Question phase */}
-      {phase === 'question' && !loading && currentQuestion && (
-        <div>
-          <div className="glass" style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 8, textTransform: 'uppercase', fontWeight: 700 }}>
-              Question {questionNumber} · {currentQuestion.type === 'mc' ? 'Multiple Choice' : currentQuestion.type === 'tf' ? 'True/False' : currentQuestion.type === 'fill' ? 'Fill in the Blank' : 'Written Answer'}
-            </div>
-            <p style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.5 }}>
-              {currentQuestion.question || currentQuestion.statement}
-            </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginBottom: '16px' }}>
+          <span style={{ color: '#22c55e', fontWeight: '600' }}>✅ {correct}</span>
+          <span style={{ color: '#ff453a', fontWeight: '600' }}>❌ {wrong}</span>
+        </div>
+
+        {loading ? (
+          <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+            <p style={{ color: '#a1a1a6' }}>Generating question...</p>
           </div>
-
-          {/* MC options */}
-          {currentQuestion.type === 'mc' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-              {currentQuestion.options.map((opt, i) => (
-                <button
-                  key={i}
-                  onClick={() => setSelectedOption(i)}
-                  style={{
-                    padding: '14px 18px', borderRadius: 14, fontSize: 14, textAlign: 'left',
-                    background: selectedOption === i ? 'rgba(34,197,94,0.15)' : 'rgba(15,23,42,0.6)',
-                    border: selectedOption === i ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.06)',
-                    color: '#fff', cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit',
-                  }}
-                >
-                  {opt}
-                </button>
-              ))}
+        ) : (
+          <>
+            <div className="glass" style={{ padding: '16px', marginBottom: '16px' }}>
+              <p style={{ fontSize: '14px', fontWeight: '600', lineHeight: '1.6' }}>
+                {currentQuestion.question}
+              </p>
             </div>
-          )}
 
-          {/* TF options */}
-          {currentQuestion.type === 'tf' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-              {['True', 'False'].map((opt, i) => (
-                <button
-                  key={opt}
-                  onClick={() => setSelectedOption(i)}
-                  style={{
-                    padding: '18px', borderRadius: 14, fontSize: 16, fontWeight: 700, textAlign: 'center',
-                    background: selectedOption === i ? 'rgba(34,197,94,0.15)' : 'rgba(15,23,42,0.6)',
-                    border: selectedOption === i ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.06)',
-                    color: '#fff', cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit',
-                  }}
-                >
-                  {opt === 'True' ? '✅' : '❌'} {opt}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Fill blank input */}
-          {currentQuestion.type === 'fill' && (
-            <div style={{ marginBottom: 16 }}>
-              <input
-                value={userAnswer}
-                onChange={e => setUserAnswer(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && userAnswer.trim() && submitAnswer()}
-                placeholder="Type your answer..."
-                autoFocus
-                style={{ fontSize: 16, marginBottom: 8 }}
-              />
-            </div>
-          )}
-
-          {/* Written answer */}
-          {currentQuestion.type === 'explain' && (
-            <div style={{ marginBottom: 16 }}>
-              <textarea
-                value={userAnswer}
-                onChange={e => setUserAnswer(e.target.value)}
-                placeholder="Write your answer... (be thorough)"
-                rows={4}
-                style={{ fontSize: 14, resize: 'vertical', minHeight: 100 }}
-              />
-            </div>
-          )}
-
-          <button
-            onClick={submitAnswer}
-            disabled={
-              (currentQuestion.type === 'mc' && selectedOption === null) ||
-              (currentQuestion.type === 'tf' && selectedOption === null) ||
-              ((currentQuestion.type === 'fill' || currentQuestion.type === 'explain') && !userAnswer.trim())
-            }
-            className="btn btn-green"
-            style={{ width: '100%', fontSize: 16, padding: '16px 0', opacity: selectedOption !== null || userAnswer.trim() ? 1 : 0.5 }}
-          >
-            Submit Answer
-          </button>
-        </div>
-      )}
-
-      {/* Feedback phase */}
-      {phase === 'feedback' && !loading && feedback && (
-        <div>
-          <div className="glass" style={{
-            marginBottom: 16,
-            borderLeft: `3px solid ${feedback.correct ? '#22c55e' : '#ff453a'}`,
-            background: feedback.correct ? 'rgba(34,197,94,0.06)' : 'rgba(255,69,58,0.06)',
-          }}>
-            <div style={{ fontSize: 15, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: renderMd(feedback.message) }} />
-            {feedback.modelAnswer && (
-              <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: 'rgba(255,255,255,0.04)' }}>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4, fontWeight: 700 }}>MODEL ANSWER</div>
-                <p style={{ fontSize: 13, lineHeight: 1.6 }}>{feedback.modelAnswer}</p>
+            {selectedOption === null ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                {currentQuestion.options.map((opt, i) => (
+                  <button key={i} onClick={() => handleAnswer(i)}
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: '12px',
+                      border: '1.5px solid rgba(255,255,255,0.1)',
+                      background: 'rgba(255,255,255,0.05)',
+                      color: '#fff',
+                      fontSize: '13px',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(48,209,88,0.1)'
+                      e.currentTarget.style.borderColor = '#30d158'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'
+                    }}
+                  >
+                    {opt}
+                  </button>
+                ))}
               </div>
+            ) : (
+              <>
+                <div className="glass" style={{
+                  padding: '16px',
+                  marginBottom: '16px',
+                  background: feedback.correct ? 'rgba(34,197,94,0.1)' : 'rgba(255,69,58,0.1)',
+                }}>
+                  <div style={{
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    marginBottom: '8px',
+                    color: feedback.correct ? '#22c55e' : '#ff453a'
+                  }}>
+                    {feedback.correct ? '✅ Correct!' : '❌ Not quite'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#a1a1a6', lineHeight: '1.6' }}>
+                    {feedback.explanation}
+                  </div>
+                  {feedback.hint && (
+                    <div style={{ fontSize: '12px', color: '#64d2ff', marginTop: '8px', fontStyle: 'italic' }}>
+                      Hint: {feedback.hint}
+                    </div>
+                  )}
+                </div>
+
+                <button onClick={nextQuestion} className="btn btn-primary btn-block">
+                  Next Question
+                </button>
+              </>
             )}
-          </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={nextAction} className="btn btn-green" style={{ flex: 1, fontSize: 15, padding: '14px 0' }}>
-              Continue →
-            </button>
-            <button onClick={endSession} className="btn btn-ghost" style={{ padding: '14px 20px', fontSize: 13 }}>
-              End Session
-            </button>
-          </div>
-        </div>
-      )}
+            {selectedOption === null && !loading && (
+              <button onClick={getHintButton} disabled={loading} className="btn btn-ghost" style={{ width: '100%', marginTop: '8px', fontSize: '12px' }}>
+                💡 Get Hint
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
 
-      <div ref={bottomRef} />
+  return (
+    <div className="page-container" style={{ paddingTop: '24px', textAlign: 'center' }}>
+      <p style={{ color: '#a1a1a6' }}>Loading...</p>
     </div>
   )
 }

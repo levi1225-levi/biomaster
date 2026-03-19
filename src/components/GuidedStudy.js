@@ -83,7 +83,7 @@ export function GuidedStudy() {
 
   if (phase === 'complete') {
     return (
-      <div className="container" style={{ paddingTop: '24px', textAlign: 'center' }}>
+      <div className="page-container" style={{ paddingTop: '24px', textAlign: 'center' }}>
         <div style={{ fontSize: '48px', marginBottom: '16px' }}>🎓</div>
         <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '8px' }}>
           Course Complete!
@@ -109,7 +109,7 @@ export function GuidedStudy() {
   }
 
   return (
-    <div className="container" style={{ paddingTop: '24px' }}>
+    <div className="page-container" style={{ paddingTop: '24px' }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',

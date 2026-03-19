@@ -106,7 +106,7 @@ export function SpeedRound() {
 
   if (!started) {
     return (
-      <div className="container" style={{ paddingTop: '24px', textAlign: 'center' }}>
+      <div className="page-container" style={{ paddingTop: '24px', textAlign: 'center' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '16px' }}>⚡ Speed Round</h1>
         <p style={{ color: '#a1a1a6', marginBottom: '24px' }}>
           8 seconds per question. Test your speed!
@@ -124,7 +124,7 @@ export function SpeedRound() {
   if (finished) {
     const showCelebration = score >= 20 || maxCombo >= 10
     return (
-      <div className="container" style={{ paddingTop: '24px', textAlign: 'center' }}>
+      <div className="page-container" style={{ paddingTop: '24px', textAlign: 'center' }}>
         {showCelebration && <Confetti />}
         <div style={{ fontSize: '48px', marginBottom: '16px' }}>🏆</div>
         <h1 style={{ fontSize: '28px', fontWeight: '700', marginBottom: '8px' }}>
@@ -176,7 +176,7 @@ export function SpeedRound() {
   const q = questions[currentIndex]
 
   return (
-    <div className="container" style={{ paddingTop: '24px' }}>
+    <div className="page-container" style={{ paddingTop: '24px' }}>
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',

@@ -25,6 +25,9 @@ export function AppProvider({ children }) {
   const [streak, setStreak] = useState(0)
   const [diagramsDone, setDiagramsDone] = useState([])
   const [studyHistory, setStudyHistory] = useState([])
+  const [testDate, setTestDate] = useState(null)
+  const [sessionHistory, setSessionHistory] = useState([])
+  const [aiCache, setAiCache] = useState({})
 
   useEffect(() => {
     const accounts = localStorage.getItem('biomaster_accounts')
@@ -43,6 +46,8 @@ export function AppProvider({ children }) {
         setStreak(userData.streak || 0)
         setDiagramsDone(userData.diagramsDone || [])
         setStudyHistory(userData.studyHistory || [])
+        setTestDate(userData.testDate || null)
+        setSessionHistory(userData.sessionHistory || [])
       }
     }
   }, [])
@@ -61,10 +66,12 @@ export function AppProvider({ children }) {
         diagramsDone,
         studyLog,
         studyHistory,
+        testDate,
+        sessionHistory,
       }
       localStorage.setItem('biomaster_accounts', JSON.stringify(accounts))
     }
-  }, [user, currentUser, cardStats, xp, achievements, apiKey, masteredCards, streak, diagramsDone, studyLog, studyHistory])
+  }, [user, currentUser, cardStats, xp, achievements, apiKey, masteredCards, streak, diagramsDone, studyLog, studyHistory, testDate, sessionHistory])
 
   const registerUser = async (username, password) => {
     if (!username.trim() || !password) {
@@ -87,6 +94,8 @@ export function AppProvider({ children }) {
         diagramsDone: [],
         studyLog: [],
         studyHistory: [],
+        testDate: null,
+        sessionHistory: [],
       }
     }
     localStorage.setItem('biomaster_accounts', JSON.stringify(accounts))
@@ -101,6 +110,8 @@ export function AppProvider({ children }) {
     setStreak(0)
     setDiagramsDone([])
     setStudyHistory([])
+    setTestDate(null)
+    setSessionHistory([])
   }
 
   const loginUser = async (username, password) => {
@@ -127,6 +138,8 @@ export function AppProvider({ children }) {
     setStreak(userData.streak || 0)
     setDiagramsDone(userData.diagramsDone || [])
     setStudyHistory(userData.studyHistory || [])
+    setTestDate(userData.testDate || null)
+    setSessionHistory(userData.sessionHistory || [])
   }
 
   const logoutUser = () => {
@@ -140,6 +153,8 @@ export function AppProvider({ children }) {
     setStreak(0)
     setDiagramsDone([])
     setStudyHistory([])
+    setTestDate(null)
+    setSessionHistory([])
     localStorage.removeItem('biomaster_lastUser')
   }
 
@@ -254,6 +269,19 @@ export function AppProvider({ children }) {
     setStudyHistory(prev => [...prev, entry])
   }
 
+  // Record a completed study session
+  const recordSession = (mode, topic, score, total, duration) => {
+    const entry = {
+      mode,
+      topic,
+      score,
+      total,
+      duration,
+      timestamp: new Date().toISOString(),
+    }
+    setSessionHistory(prev => [...prev, entry])
+  }
+
   // Analyze study history to find weaknesses (local computation)
   const getWeaknessProfile = () => {
     const topics = {}
@@ -334,6 +362,18 @@ export function AppProvider({ children }) {
       .sort((a, b) => b.score - a.score)
       .slice(0, count)
       .map(item => item.card)
+  }
+
+  // Get all wrong answers for review
+  const getWrongAnswers = (allCards) => {
+    const wrongCardIds = studyHistory
+      .filter(e => !e.correct)
+      .map(e => e.cardId)
+    
+    // Deduplicate
+    const uniqueWrongIds = [...new Set(wrongCardIds)]
+    
+    return allCards.filter(card => uniqueWrongIds.includes(card.id))
   }
 
   // Generate AI study plan (calls GPT-4o once per session)
@@ -425,8 +465,14 @@ What should they do next? Reply ONLY with valid JSON (no markdown, no backticks)
     }
   }
 
-  const askAI = async (question) => {
+  const askAI = async (question, maxTokens = 300) => {
     if (!apiKey) throw new Error('API key not set')
+
+    // Check cache (first 100 chars as key)
+    const cacheKey = question.substring(0, 100)
+    if (aiCache[cacheKey]) {
+      return aiCache[cacheKey]
+    }
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -439,7 +485,7 @@ What should they do next? Reply ONLY with valid JSON (no markdown, no backticks)
         messages: [
           {
             role: 'system',
-            content: 'You are a helpful biology tutor. Explain concepts clearly and concisely. Focus on SNC2D biology topics.',
+            content: 'SNC2D biology tutor. Be concise.',
           },
           {
             role: 'user',
@@ -447,7 +493,7 @@ What should they do next? Reply ONLY with valid JSON (no markdown, no backticks)
           }
         ],
         temperature: 0.7,
-        max_tokens: 500,
+        max_tokens: maxTokens,
       })
     })
 
@@ -456,7 +502,15 @@ What should they do next? Reply ONLY with valid JSON (no markdown, no backticks)
     }
 
     const data = await response.json()
-    return data.choices[0].message.content
+    const result = data.choices[0].message.content
+
+    // Cache the response
+    setAiCache(prev => ({
+      ...prev,
+      [cacheKey]: result
+    }))
+
+    return result
   }
 
   return (
@@ -486,10 +540,15 @@ What should they do next? Reply ONLY with valid JSON (no markdown, no backticks)
       askAI,
       studyHistory,
       recordAction,
+      recordSession,
       getWeaknessProfile,
       getSmartQueue,
+      getWrongAnswers,
       generateStudyPlan,
       getNextRecommendation,
+      testDate,
+      setTestDate,
+      sessionHistory,
     }}>
       {children}
     </AppContext.Provider>
@@ -509,9 +568,9 @@ export async function aiExplain(apiKey, question, correctAns, wrongAns) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
       body: JSON.stringify({
-        model: 'gpt-4o', max_tokens: 200,
+        model: 'gpt-4o', max_tokens: 150,
         messages: [
-          { role: 'system', content: 'You are a Grade 10 biology tutor. Be concise (2-3 sentences max).' },
+          { role: 'system', content: 'Grade 10 biology tutor. Be concise (2-3 sentences max).' },
           { role: 'user', content: `Student answered "${wrongAns}" for: "${question}". Correct answer: "${correctAns}". Explain why correct answer is right and theirs was wrong.` }
         ]
       })
@@ -530,9 +589,9 @@ export async function aiStudyPlan(apiKey, stats) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
       body: JSON.stringify({
-        model: 'gpt-4o', max_tokens: 150,
+        model: 'gpt-4o', max_tokens: 100,
         messages: [
-          { role: 'system', content: 'You are a study coach for Grade 10 biology. Give a personalized 2-sentence recommendation.' },
+          { role: 'system', content: 'Study coach for Grade 10 biology. Give a personalized 2-sentence recommendation.' },
           { role: 'user', content: `Student stats: ${stats}. What should they focus on today?` }
         ]
       })
@@ -551,9 +610,9 @@ export async function aiExplainCard(apiKey, q, a) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
       body: JSON.stringify({
-        model: 'gpt-4o', max_tokens: 200,
+        model: 'gpt-4o', max_tokens: 150,
         messages: [
-          { role: 'system', content: 'You are a Grade 10 biology tutor. Explain simply with a helpful mnemonic or memory trick.' },
+          { role: 'system', content: 'Grade 10 biology tutor. Explain simply with a helpful mnemonic or memory trick.' },
           { role: 'user', content: `Explain this for a Grade 10 student: Q: ${q} A: ${a}` }
         ]
       })

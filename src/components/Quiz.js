@@ -72,7 +72,7 @@ export function Quiz() {
 
   if (!started) {
     return (
-      <div className="container" style={{ paddingTop: '24px' }}>
+      <div className="page-container" style={{ paddingTop: '24px' }}>
         <h1 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '16px' }}>Quiz Mode</h1>
 
         <div className="card-lg" style={{ marginBottom: '24px' }}>
@@ -109,7 +109,7 @@ export function Quiz() {
   if (showResults) {
     const percentage = Math.round((score / questions.length) * 100)
     return (
-      <div className="container" style={{ paddingTop: '24px', textAlign: 'center' }}>
+      <div className="page-container" style={{ paddingTop: '24px', textAlign: 'center' }}>
         {percentage >= 80 && <Confetti />}
         <div style={{ fontSize: '64px', marginBottom: '16px' }}>
           {percentage >= 80 ? '🎉' : percentage >= 60 ? '👍' : '📚'}
@@ -154,7 +154,7 @@ export function Quiz() {
   const q = questions[currentIndex]
 
   return (
-    <div className="container" style={{ paddingTop: '24px' }}>
+    <div className="page-container" style={{ paddingTop: '24px' }}>
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',

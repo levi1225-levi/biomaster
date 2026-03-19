@@ -21,6 +21,7 @@ export function Nav({ currentPage, onPageChange }) {
     { id: 'Order', icon: '🔢' },
     { id: 'Match', icon: '🔗' },
     { id: 'AI Study', icon: '🧠' },
+    { id: 'Review', icon: '🔄' },
     { id: 'AI Tutor', icon: '🤖' },
     { id: 'Notes', icon: '📘' },
     { id: 'Stats', icon: '📊' },

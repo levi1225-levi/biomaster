@@ -26,7 +26,7 @@ export function Analytics() {
   })
 
   return (
-    <div className="container" style={{ paddingTop: '24px' }}>
+    <div className="page-container" style={{ paddingTop: '24px' }}>
       <h1 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '16px' }}>📊 Analytics</h1>
 
       <div style={{

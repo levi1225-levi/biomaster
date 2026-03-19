@@ -5,7 +5,7 @@ import { useApp } from '@/lib/store'
 import { LEVELS, FLASHCARDS, CONCEPTS } from '@/data/questions'
 
 export function Settings() {
-  const { user, xp, logoutUser, apiKey, setApiKey, getLevel } = useApp()
+  const { user, xp, logoutUser, apiKey, setApiKey, getLevel, testDate, setTestDate } = useApp()
   const [tempApiKey, setTempApiKey] = useState(apiKey || '')
   const [testingKey, setTestingKey] = useState(false)
   const [testResult, setTestResult] = useState(null)
@@ -16,6 +16,7 @@ export function Settings() {
   const [passwordError, setPasswordError] = useState('')
   const [passwordSuccess, setPasswordSuccess] = useState('')
   const [changingPassword, setChangingPassword] = useState(false)
+  const [tempTestDate, setTempTestDate] = useState(testDate || '')
   const level = getLevel()
   const levelInfo = LEVELS.find(l => l.level === level)
 
@@ -40,6 +41,12 @@ export function Settings() {
     } finally {
       setTestingKey(false)
     }
+  }
+
+  const handleTestDateChange = (e) => {
+    const newDate = e.target.value
+    setTempTestDate(newDate)
+    setTestDate(newDate)
   }
 
   const handleChangePassword = async (e) => {
@@ -190,6 +197,25 @@ export function Settings() {
           </form>
         </div>
       )}
+
+      {/* Test Date */}
+      <div className="glass" style={{ marginBottom: 20 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>📅 Test Date</h3>
+        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 12 }}>
+          Set your test date to see a countdown and get personalized study advice
+        </p>
+        <input
+          type="date"
+          value={tempTestDate}
+          onChange={handleTestDateChange}
+          style={{ width: '100%', padding: '10px 12px', fontSize: 14, marginBottom: 8 }}
+        />
+        {testDate && (
+          <div style={{ fontSize: 12, color: '#22c55e', fontWeight: 600 }}>
+            ✅ Test date set for {new Date(testDate).toLocaleDateString()}
+          </div>
+        )}
+      </div>
 
       {/* OpenAI API */}
       <div className="glass" style={{ marginBottom: 20 }}>

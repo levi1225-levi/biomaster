@@ -67,7 +67,19 @@ export function Flashcards() {
     setAiLoading(false)
   }
 
-  if (!card) return <div className="text-center py-20 text-white/40">No cards available</div>
+  if (!card) {
+    return (
+      <div className="animate-fade-up">
+        <div style={{ textAlign: 'center', paddingTop: 60, paddingBottom: 60 }}>
+          <p style={{ fontSize: 18, fontWeight: 600, marginBottom: 12, color: '#fff' }}>No cards available</p>
+          <p style={{ fontSize: 13, marginBottom: 20, color: 'rgba(255,255,255,0.4)' }}>Try selecting a different topic or check back later.</p>
+          <button onClick={() => setTopic('All')} className="btn btn-ghost">
+            View All Cards
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const ratings = [
     { label: 'Again', key: 1, bg: 'rgba(255,69,58,0.15)', border: '#ff453a', color: '#ff453a' },

@@ -7,15 +7,34 @@ import { ProgressRing, TopicTag } from './shared'
 import { aiStudyPlan } from '@/lib/store'
 
 export function Dashboard() {
-  const { user, xp, masteredCards, achievements, getDueCards, getLevel, apiKey, generateStudyPlan, getWeaknessProfile, studyHistory } = useApp()
+  const { user, xp, masteredCards, achievements, getDueCards, getLevel, apiKey, generateStudyPlan, getWeaknessProfile, studyHistory, testDate, sessionHistory } = useApp()
   const [aiPlan, setAiPlan] = useState(null)
   const [planLoading, setPlanLoading] = useState(false)
   const [weaknessProfile, setWeaknessProfile] = useState(null)
+  const [daysUntilTest, setDaysUntilTest] = useState(null)
+  const [testUrgency, setTestUrgency] = useState(null)
 
   useEffect(() => {
     // Generate weakness profile (local computation - always works)
     setWeaknessProfile(getWeaknessProfile())
   }, [])
+
+  useEffect(() => {
+    // Calculate days until test
+    if (testDate) {
+      const now = new Date()
+      now.setHours(0, 0, 0, 0)
+      const test = new Date(testDate)
+      test.setHours(0, 0, 0, 0)
+      const diff = Math.ceil((test - now) / (1000 * 60 * 60 * 24))
+      setDaysUntilTest(diff)
+      
+      if (diff <= 0) setTestUrgency('past')
+      else if (diff < 3) setTestUrgency('critical')
+      else if (diff < 7) setTestUrgency('warning')
+      else setTestUrgency('normal')
+    }
+  }, [testDate])
 
   useEffect(() => {
     if (apiKey && !aiPlan) {
@@ -40,10 +59,10 @@ export function Dashboard() {
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
   const timeStudiedToday = (studyHistory || [])
-    .filter(h => h.date === today)
+    .filter(h => h.timestamp.startsWith(today))
     .reduce((acc, h) => acc + (h.timeSpent || 0), 0)
   const timeStudiedWeek = (studyHistory || [])
-    .filter(h => h.date >= weekAgo)
+    .filter(h => h.timestamp.startsWith(weekAgo) || h.timestamp > weekAgo)
     .reduce((acc, h) => acc + (h.timeSpent || 0), 0)
 
   const stats = [
@@ -64,17 +83,67 @@ export function Dashboard() {
     { name: 'Fill in Blank', icon: '✏️', desc: 'Type answers', color: 'linear-gradient(135deg, #ff9f0a 0%, #30d158 100%)' },
     { name: 'Ordering', icon: '🔢', desc: 'Build sequences', color: 'linear-gradient(135deg, #30d158 0%, #bf5af2 100%)' },
     { name: 'Matching', icon: '🔗', desc: 'Connect pairs', color: 'linear-gradient(135deg, #bf5af2 0%, #ff9f0a 100%)' },
+    { name: 'AI Study', icon: '🧠', desc: 'AI-powered', color: 'linear-gradient(135deg, #64d2ff 0%, #30d158 100%)' },
+    { name: 'Wrong Review', icon: '🔄', desc: 'Fix mistakes', color: 'linear-gradient(135deg, #ff9f0a 0%, #bf5af2 100%)' },
     { name: 'AI Tutor', icon: '🤖', desc: 'Chat with AI', color: 'linear-gradient(135deg, #ff9f0a 0%, #bf5af2 100%)' },
   ]
 
+  const getTestUrgencyColor = () => {
+    if (testUrgency === 'critical') return 'rgba(255,69,58,0.12)'
+    if (testUrgency === 'warning') return 'rgba(255,159,10,0.12)'
+    return 'rgba(48,209,88,0.12)'
+  }
+
+  const getTestUrgencyBorder = () => {
+    if (testUrgency === 'critical') return '#ff453a'
+    if (testUrgency === 'warning') return '#ff9f0a'
+    return '#30d158'
+  }
+
+  const getTestAdvice = () => {
+    if (!daysUntilTest) return ''
+    if (daysUntilTest <= 0) return 'Test day is here! Go show what you\'ve learned!'
+    if (daysUntilTest <= 1) return 'Test tomorrow! Do a final review session and get good rest.'
+    if (daysUntilTest <= 3) return 'Test in ' + daysUntilTest + ' days. Focus on weak areas and do practice tests.'
+    if (daysUntilTest <= 7) return 'Test in ' + daysUntilTest + ' days. Balanced review of all topics.'
+    return 'Test in ' + daysUntilTest + ' days. Build a strong foundation across all topics.'
+  }
+
+  const recentSessions = (sessionHistory || []).slice(-10).reverse()
+
   return (
-    <div className="container" style={{ paddingTop: '24px', animation: 'fadeUp 0.6s ease-out' }}>
+    <div className="page-container" style={{ paddingTop: '24px', animation: 'fadeUp 0.6s ease-out' }}>
       <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '8px' }}>
         Welcome, {user}! 👋
       </h1>
       <p style={{ color: '#a1a1a6', marginBottom: '24px', fontSize: '14px' }}>
         You're a {levelInfo?.title || 'Novice'}. Keep learning!
       </p>
+
+      {/* Test Date Countdown */}
+      {testDate && daysUntilTest !== null && (
+        <div className="card" style={{
+          marginBottom: '24px',
+          background: getTestUrgencyColor(),
+          borderLeft: `4px solid ${getTestUrgencyBorder()}`,
+          padding: '16px',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: '12px', color: '#a1a1a6', fontWeight: '700', marginBottom: '4px' }}>
+                TEST COUNTDOWN
+              </div>
+              <div style={{ fontSize: '24px', fontWeight: '800', marginBottom: '8px', color: testUrgency === 'critical' ? '#ff453a' : testUrgency === 'warning' ? '#ff9f0a' : '#30d158' }}>
+                {daysUntilTest > 0 ? daysUntilTest + ' days' : 'Today!'}
+              </div>
+              <div style={{ fontSize: '13px', color: '#a1a1a6', lineHeight: '1.5' }}>
+                {getTestAdvice()}
+              </div>
+            </div>
+            <div style={{ fontSize: '40px', opacity: 0.7 }}>📅</div>
+          </div>
+        </div>
+      )}
 
       <div className="grid-2col" style={{
         display: 'grid',
@@ -186,6 +255,41 @@ export function Dashboard() {
                     background: score >= 80 ? '#30d158' : score >= 60 ? '#ff9f0a' : '#ff453a',
                     transition: 'width 0.3s ease',
                   }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recent Sessions */}
+      {recentSessions.length > 0 && (
+        <div className="card" style={{ marginBottom: '24px' }}>
+          <div style={{ fontSize: '13px', color: '#a1a1a6', marginBottom: '12px', fontWeight: '700' }}>
+            📈 RECENT SESSIONS
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {recentSessions.map((session, i) => (
+              <div key={i} style={{
+                display: 'grid',
+                gridTemplateColumns: 'auto 1fr auto auto',
+                gap: '12px',
+                alignItems: 'center',
+                paddingBottom: '8px',
+                borderBottom: i < recentSessions.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none'
+              }}>
+                <div style={{ fontSize: '16px' }}>
+                  {session.mode === 'flashcard' ? '🃏' : session.mode === 'quiz' ? '❓' : '⚡'}
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: '600' }}>{session.topic}</div>
+                  <div style={{ fontSize: '10px', color: '#a1a1a6' }}>{session.mode}</div>
+                </div>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: session.score >= session.total * 0.8 ? '#30d158' : '#ff9f0a' }}>
+                  {session.score}/{session.total}
+                </div>
+                <div style={{ fontSize: '10px', color: '#a1a1a6' }}>
+                  {Math.round(session.duration / 60)}m ago
                 </div>
               </div>
             ))}

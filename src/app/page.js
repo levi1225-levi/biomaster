@@ -19,6 +19,7 @@ import { FillInBlank } from '@/components/FillInBlank'
 import { Ordering } from '@/components/Ordering'
 import { Matching } from '@/components/Matching'
 import { AIStudyMode } from '@/components/AIStudyMode'
+import { WrongReview } from '@/components/WrongReview'
 
 function AuthScreen({ onLogin, onRegister }) {
   const [tab, setTab] = useState('login')
@@ -257,6 +258,7 @@ export default function Home() {
       case 'Order': return <Ordering />
       case 'Match': return <Matching />
       case 'AI Study': return <AIStudyMode />
+      case 'Review': return <WrongReview />
       case 'AI Tutor': return <AITutor />
       case 'Notes': return <Notes />
       case 'Stats': return <Analytics />
