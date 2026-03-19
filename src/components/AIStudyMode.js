@@ -118,12 +118,14 @@ export function AIStudyMode() {
         // Add timeout so it doesn't hang forever
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Request timed out (15s)')), 15000))
         const aiPromise = askAI(
-          `You are teaching a Grade 10 student about "${topic}" for their SNC2D biology test. ` +
-          `Their weak areas are: ${weakAreas}. ` +
-          `Here's the reference material: ${concept?.body?.substring(0, 500) || 'General biology concepts'}. ` +
-          `Give a focused 3-4 paragraph explanation of the most important concepts they need to know about ${topic}. ` +
-          `Use simple language, bold key terms with **, and include 1-2 memory tricks. ` +
-          `Focus especially on areas they're weak in.`
+          `You are a biology tutor giving a QUICK review for a Grade 10 SNC2D test. Topic: "${topic}". ` +
+          `Student's weak areas: ${weakAreas}. ` +
+          `Reference: ${concept?.body?.substring(0, 400) || topic}. ` +
+          `Give a BITE-SIZED review (MAX 8 bullet points). Format EXACTLY like this:\n` +
+          `**Key Point 1** — short explanation\n` +
+          `**Key Point 2** — short explanation\n` +
+          `Then add ONE memory trick at the end.\n` +
+          `Keep each bullet to 1 sentence MAX. Be direct, no fluff. Focus on what they're weak at.`
         )
 
         const response = await Promise.race([aiPromise, timeoutPromise])
