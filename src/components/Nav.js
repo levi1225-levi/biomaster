@@ -20,6 +20,7 @@ export function Nav({ currentPage, onPageChange }) {
     { id: 'Fill', icon: '✏️' },
     { id: 'Order', icon: '🔢' },
     { id: 'Match', icon: '🔗' },
+    { id: 'Short Answer', icon: '✍️' },
     { id: 'AI Study', icon: '🧠' },
     { id: 'Review', icon: '🔄' },
     { id: 'AI Tutor', icon: '🤖' },

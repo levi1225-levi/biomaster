@@ -80,8 +80,7 @@ export function PracticeTest() {
   }
 
   if (!started) {
-    return (
-      <div className="page-container" style={{ paddingTop: '24px', textAlign: 'center' }}>
+    return ( <div className="page-container animate-fade-up" style={{ paddingTop: '24px', textAlign: 'center' }}>
         <h1 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '16px' }}>Practice Test</h1>
         <p style={{ color: '#a1a1a6', marginBottom: '24px' }}>
           15 MC + 10 TF = 25 total questions
@@ -106,8 +105,7 @@ export function PracticeTest() {
         )
       : allQuestions
 
-    return (
-      <div className="page-container" style={{ paddingTop: '24px' }}>
+    return ( <div className="page-container animate-fade-up" style={{ paddingTop: '24px' }}>
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <div style={{ fontSize: '48px', marginBottom: '16px' }}>
             {percentage >= 80 ? '🏆' : percentage >= 60 ? '👍' : '📚'}
@@ -149,8 +147,7 @@ export function PracticeTest() {
             ? answers[i] === q.c
             : answers[i] === q.a
 
-          return (
-            <div key={i} className="card" style={{ marginBottom: '16px' }}>
+          return ( <div key={i} className="card animate-fade-up" style={{ marginBottom: '16px' }}>
               <div style={{
                 display: 'flex',
                 alignItems: 'flex-start',
@@ -199,8 +196,7 @@ export function PracticeTest() {
     )
   }
 
-  return (
-    <div className="page-container" style={{ paddingTop: '24px' }}>
+  return ( <div className="page-container animate-fade-up" style={{ paddingTop: '24px' }}>
       <div style={{ marginBottom: '20px' }}>
         <div style={{ fontSize: '13px', color: '#a1a1a6', marginBottom: '8px' }}>
           Progress

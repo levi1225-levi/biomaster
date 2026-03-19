@@ -52,8 +52,7 @@ export function DiagramLabelling() {
   }
 
   if (!selectedDiagram) {
-    return (
-      <div className="page-container" style={{ paddingTop: '24px' }}>
+    return ( <div className="page-container animate-fade-up" style={{ paddingTop: '24px' }}>
         <h1 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '16px' }}>Diagram Labelling</h1>
 
         <div style={{
@@ -94,8 +93,7 @@ export function DiagramLabelling() {
     )
   }
 
-  return (
-    <div className="page-container" style={{ paddingTop: '24px' }}>
+  return ( <div className="page-container animate-fade-up" style={{ paddingTop: '24px' }}>
       <div style={{ marginBottom: '16px' }}>
         <button
           onClick={() => setSelectedDiagram(null)}

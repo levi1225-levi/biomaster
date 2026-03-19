@@ -61,14 +61,13 @@ export function AITutor() {
   ]
 
   if (!apiKey) {
-    return (
-      <div style={{
+    return ( <div style={{
         display: 'flex',
         flexDirection: 'column',
         height: 'calc(100vh - 100px)',
         alignItems: 'center',
         justifyContent: 'center',
-      }} className="page-container">
+      }} className="page-container animate-fade-up">
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '48px', marginBottom: '16px' }}>🤖</div>
           <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '8px' }}>
@@ -88,8 +87,7 @@ export function AITutor() {
     )
   }
 
-  return (
-    <div style={{
+  return ( <div className="animate-fade-up" style={{
       display: 'flex',
       flexDirection: 'column',
       height: 'calc(100vh - 100px)',

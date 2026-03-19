@@ -279,7 +279,7 @@ export function Settings() {
       </div>
 
       <div style={{ textAlign: 'center', fontSize: 12, color: 'rgba(255,255,255,0.2)', marginTop: 20 }}>
-        BioMaster v10 · Next.js 14 · OpenAI GPT-4o-mini
+        BioMaster v10 · Next.js 14 · OpenAI GPT-4o
       </div>
     </div>
   )

@@ -82,8 +82,7 @@ export function GuidedStudy() {
   const conceptText = concept?.body || concept || ''
 
   if (phase === 'complete') {
-    return (
-      <div className="page-container" style={{ paddingTop: '24px', textAlign: 'center' }}>
+    return ( <div className="page-container animate-fade-up" style={{ paddingTop: '24px', textAlign: 'center' }}>
         <div style={{ fontSize: '48px', marginBottom: '16px' }}>🎓</div>
         <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '8px' }}>
           Course Complete!
@@ -108,8 +107,7 @@ export function GuidedStudy() {
     )
   }
 
-  return (
-    <div className="page-container" style={{ paddingTop: '24px' }}>
+  return ( <div className="page-container animate-fade-up" style={{ paddingTop: '24px' }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',

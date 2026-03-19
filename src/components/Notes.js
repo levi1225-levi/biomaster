@@ -13,8 +13,7 @@ export function Notes() {
     })
   }
 
-  return (
-    <div className="page-container" style={{ paddingTop: '24px' }}>
+  return ( <div className="page-container animate-fade-up" style={{ paddingTop: '24px' }}>
       <h1 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '16px' }}>📚 Study Notes</h1>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

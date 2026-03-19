@@ -513,7 +513,16 @@ What should they do next? Reply ONLY with valid JSON (no markdown, no backticks)
     return result
   }
 
-  return (
+  const addXp = (amount) => {
+    setXp(prev => prev + amount)
+  }
+
+  const doLog = () => {
+    const today = new Date().toISOString().split('T')[0]
+    setStudyLog(prev => [...prev, today])
+  }
+
+    return (
     <AppContext.Provider value={{
       user,
       currentUser,
@@ -549,6 +558,8 @@ What should they do next? Reply ONLY with valid JSON (no markdown, no backticks)
       testDate,
       setTestDate,
       sessionHistory,
+      addXp,
+      doLog,
     }}>
       {children}
     </AppContext.Provider>

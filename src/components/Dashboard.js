@@ -83,6 +83,7 @@ export function Dashboard() {
     { name: 'Fill in Blank', icon: '✏️', desc: 'Type answers', color: 'linear-gradient(135deg, #ff9f0a 0%, #30d158 100%)' },
     { name: 'Ordering', icon: '🔢', desc: 'Build sequences', color: 'linear-gradient(135deg, #30d158 0%, #bf5af2 100%)' },
     { name: 'Matching', icon: '🔗', desc: 'Connect pairs', color: 'linear-gradient(135deg, #bf5af2 0%, #ff9f0a 100%)' },
+    { name: 'Short Answer', icon: '✍️', desc: 'Write answers', color: 'linear-gradient(135deg, #64d2ff 0%, #ff9f0a 100%)' },
     { name: 'AI Study', icon: '🧠', desc: 'AI-powered', color: 'linear-gradient(135deg, #64d2ff 0%, #30d158 100%)' },
     { name: 'Wrong Review', icon: '🔄', desc: 'Fix mistakes', color: 'linear-gradient(135deg, #ff9f0a 0%, #bf5af2 100%)' },
     { name: 'AI Tutor', icon: '🤖', desc: 'Chat with AI', color: 'linear-gradient(135deg, #ff9f0a 0%, #bf5af2 100%)' },
@@ -111,8 +112,7 @@ export function Dashboard() {
 
   const recentSessions = (sessionHistory || []).slice(-10).reverse()
 
-  return (
-    <div className="page-container" style={{ paddingTop: '24px', animation: 'fadeUp 0.6s ease-out' }}>
+  return ( <div className="page-container animate-fade-up" style={{ paddingTop: '24px', animation: 'fadeUp 0.6s ease-out' }}>
       <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '8px' }}>
         Welcome, {user}! 👋
       </h1>
